@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+
+# Project specific
+logs/
+*.log
+.gemini/
+antigravity/
+
+# Data & Database
+*.db
+data_package/geekbrain.db
+data_package/knowledge_base/
+data_package/structured_data/
+
+# Sensitive info
+src/kb_id.txt
+credentials.json
+.aws/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
