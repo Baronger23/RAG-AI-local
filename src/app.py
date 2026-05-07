@@ -130,8 +130,14 @@ for message in st.session_state.messages:
                 with col1:
                     st.subheader("📚 Retrieved Context")
                     if message["obs_data"].get("sources"):
-                        for src in message["obs_data"]["sources"]:
-                            st.markdown(f"• `{src}`")
+                        for i, chunk in enumerate(message["obs_data"]["sources"]):
+                            # Handle both old (string) and new (dict) formats
+                            if isinstance(chunk, dict):
+                                with st.expander(f"📄 {chunk.get('source', 'Unknown')} (Chunk {i+1})"):
+                                    # Fix: Use 'content' as defined in rag_pipeline.py
+                                    st.write(chunk.get('content', chunk.get('text', 'No content available')))
+                            else:
+                                st.markdown(f"• `{chunk}`")
                     else:
                         st.write("No KB chunks retrieved.")
                 
@@ -144,17 +150,58 @@ for message in st.session_state.messages:
                         st.write("No tools called.")
                 
                 st.subheader("🤖 Internal Reasoning Process")
-                # Showing the conversation turns from memory
+                # Showing the conversation turns with detailed tool info
                 for msg in message["obs_data"].get("history", []):
                     role = msg["role"]
-                    content = msg["content"][0].get("text", "") if isinstance(msg["content"], list) else str(msg["content"])
+                    content_parts = msg.get("content", [])
                     
-                    if "toolUse" in str(msg):
-                        st.markdown(f"**LLM DECISION:** *Called tools*")
-                    elif "toolResult" in str(msg):
-                        st.markdown(f"**SYSTEM RESPONSE:** *Tool data received*")
-                    else:
-                        st.markdown(f"**{role.upper()}**: {content[:200]}...")
+                    if role == "assistant":
+                        # Check if it was a tool call or a final answer
+                        for part in content_parts:
+                            if "toolUse" in part:
+                                tool = part["toolUse"]
+                                tool_name = tool['name']
+                                tool_input = tool['input']
+                                # Format input beautifully
+                                input_str = ", ".join([f"**{k}**: `{v}`" for k, v in tool_input.items()])
+                                st.markdown(f"🛠️ **LLM Calling Tool:** `{tool_name}`")
+                                st.caption(f"Params: {input_str}")
+                            elif "text" in part:
+                                # Show assistant text response (limited)
+                                st.markdown(f"**ASSISTANT**: {part['text'][:300]}...")
+                    
+                    elif role == "user":
+                        # Check if it's a tool result
+                        is_tool_result = False
+                        for part in content_parts:
+                            if "toolResult" in part:
+                                is_tool_result = True
+                                result = part["toolResult"]
+                                res_json = result.get("content", [{}])[0].get("json", {})
+                                
+                                # Header for result
+                                st.markdown(f"📥 **Tool Result** (Status: `{result.get('status')}`) ")
+                                
+                                # Display data as readable text pairs (matching input style)
+                                if isinstance(res_json, dict):
+                                    data = res_json.get("data", res_json.get("metrics", res_json.get("status", res_json)))
+                                    
+                                    if isinstance(data, list): # For multiple rows
+                                        for i, row in enumerate(data):
+                                            row_str = ", ".join([f"**{k}**: `{v}`" for k, v in row.items()])
+                                            st.markdown(f"Row {i+1}: {row_str}")
+                                    elif isinstance(data, dict): # For single object
+                                        row_str = ", ".join([f"**{k}**: `{v}`" for k, v in data.items()])
+                                        st.markdown(row_str)
+                                    else:
+                                        st.write(str(data))
+                                else:
+                                    st.write(str(res_json))
+                        
+                        if not is_tool_result:
+                            # It's a regular user message
+                            text = content_parts[0].get("text", "") if content_parts else ""
+                            st.markdown(f"**USER**: {text}")
 
 # Chat Input
 if prompt := st.chat_input("Ask about costs, incidents, or team info..."):

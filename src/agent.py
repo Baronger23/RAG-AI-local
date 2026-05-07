@@ -7,6 +7,7 @@ import json
 import re
 import time
 from collections import deque
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from rag_pipeline import L1Retriever, L2Retriever, MockLLM, BedrockLLM
@@ -356,7 +357,11 @@ class L3Agent:
         chunks = self.l2_retriever.retrieve_chunks(question, top_k=5)
         kb_context = "\n\n".join([f"[Source: {c['source']}]\n{c['content']}" for c in chunks])
         
+        # Get current date for reasoning about deadlines
+        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         system_prompt = f"""You are an expert assistant for GeekBrain fintech startup.
+Current Date: {current_date}
 You have access to historical data (Database) and real-time data (Monitoring API).
 Use the tools provided to answer technical and financial questions.
 
@@ -370,7 +375,10 @@ Rules:
 4. If the knowledge base context has the answer, you can use it directly.
 5. Always cite your sources (tool data or document name).
 6. If a service name is mentioned but ambiguous, try to match it to: PaymentGW, OrderSvc, AuthSvc, NotificationSvc, ReportingSvc, FraudDetector.
-7. Important: For SLA compliance questions, ALWAYS check current metrics AND SLA targets from tools. Do not rely solely on KB text if tools are available."""
+7. SLA Compliance: Always check current metrics AND targets from tools.
+8. Date Logic: Calculate exact time gaps. If a meeting deadline (e.g. Mar 12) violates a policy (e.g. 48h after Mar 5), flag it as a violation.
+9. Style: Be extremely concise. Answer the main question first. Use bullet points for evidence. Avoid redundant explanations.
+10. Priority: Always treat official Policy as the absolute source of truth for compliance. If a person or meeting note suggests a more lenient deadline, flag it as an SLA violation regardless."""
 
         try:
             # Bedrock Converse API Loop (handles tool usage)
@@ -446,13 +454,20 @@ Rules:
                 if 'text' in part:
                     final_answer += part['text']
             
+            # Level detection for UI
+            level = "L1/L2"
+            if tools_called:
+                level = "L3"
+            if len(self.memory.messages) > 2:
+                level = "L4"
+
             return {
                 "answer": final_answer,
-                "sources": [c["source"] for c in chunks],
+                "sources": chunks,  # Return full chunk objects (text + source)
                 "tools_called": tools_called,
-                "level": "L3/L4",
+                "level": level,
                 "success": True,
-                "messages": messages # For memory update
+                "messages": messages 
             }
 
         except Exception as e:
